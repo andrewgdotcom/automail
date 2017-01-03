@@ -1,0 +1,16 @@
+PATH=/bin:/usr/bin:/usr/bin
+MAILDIR=$HOME/Maildir		#you'd better make sure it exists
+DEFAULT=$MAILDIR/		#completely optional
+LOGFILE=$HOME/.procmaillog	#recommended
+UMASK=076			# o+x flag on folders with new mail
+
+INCLUDERC=/var/local/procmail-templates/backup
+
+INCLUDERC=/var/local/procmail-templates/automail
+
+#INCLUDERC=/var/local/procmail-templates/forward
+
+INCLUDERC=/var/local/procmail-templates/spamfilter
+
+#INCLUDERC=/var/local/procmail-templates/vacation
+

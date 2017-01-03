@@ -1,0 +1,11 @@
+# This template generates vacation messages for incoming mail. Make sure
+# that ~/.vacation.msg exists and that 'vacation -i' has been run before 
+# including this template. Also make sure that you set MYALIASES in the 
+# calling procmailrc file to be a space-delimited list of all the email
+# left-hand sides you receive email for (other than your username). All
+# users MUST set at least one (their official email).
+
+FLAGS=`echo $AUTOMAILALIASES|perl -pe 's/ +/ -a /g'`
+:0 hic
+| vacation -a $FLAGS $LOGNAME
+

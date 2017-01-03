@@ -1,0 +1,11 @@
+# This template moves any spam
+# to the SPAM subfolder.
+
+:0fw:spamassassin.lock
+* < 256000
+| /usr/bin/spamc
+
+:0
+* ^X-Spam-Flag:.*YES
+.SPAM/
+

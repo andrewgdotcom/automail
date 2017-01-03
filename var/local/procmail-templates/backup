@@ -1,0 +1,7 @@
+# This template keeps the last 100 received emails in a subfolder called
+# Backup.
+:0 c
+.Backup/
+:0 ic
+| cd .Backup/new && rm -f dummy `ls -t * | sed -e 1,100d`
+

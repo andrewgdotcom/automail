@@ -1,0 +1,15 @@
+# This template forwards a copy of each email to the address specified in
+# $AUTOMAILFORWARD, which should have been set in the user's .procmailrc
+# Check for mail loops though! Also don't forward automail commands.
+
+FQDN=`hostname --fqdn`
+
+:0 f
+|perl -pe "print \"X-Loop: $LOGNAME\@$FQDN\n\" if /^Subject:/;\
+	   print \"X-Loop-Detected: YES\n\" if /^X-Loop: $LOGNAME\@$FQDN$/;"
+
+:0 ic
+* !Subject:[ \t]+(automail![ \t]+|Re:[ \t]+AUTOMAIL CONFIRMATION)
+* !^X-Loop-Detected:
+!$AUTOMAILFORWARD
+

@@ -1,0 +1,16 @@
+# This template manages the user's email settings via self-addressed emails.
+# The automail executable is a perl script that edits your .procmailrc file
+# and relies heavily on these templates.
+# To get help on usage, enable this template and then send yourself an email
+# with the subject "automail! help".
+
+# This recipe delivers to your mailbox aswell, so that if you are hacked,
+# you should notice.
+# Automail marks all of its autoreplies as junk. Filter them out to avoid
+# loops. The one reply not marked junk is the mail forward loop detection.
+
+:0 ic
+* Subject:[ \t]+(automail![ \t]+|Re:[ \t]+AUTOMAIL CONFIRMATION|(Re: )?AUTOMAIL FORWARD FROM)
+* !Precedence:.*junk
+|/usr/local/bin/automail
+

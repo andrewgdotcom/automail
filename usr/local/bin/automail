@@ -1,0 +1,464 @@
+#!/usr/bin/perl
+
+$HOME=$ENV{'HOME'};
+$LOGNAME=$ENV{'LOGNAME'};
+
+open(LOG,">>$HOME/.automail.log");
+
+open(FQDN,"hostname --fqdn|");
+$FQDN=<FQDN>;
+chop $FQDN;
+close(FQDN);
+
+print LOG "\n\nNew process $$\n\nGot hostname: $FQDN\n";
+
+#### Scan headers for interesting stuff ####
+
+while(<>) {
+  last unless /\w/;
+  if(/^Subject:\s+automail!\s+(.*)$/) {
+    $instructions=$1;
+print LOG "Got instructions: $instructions\n";
+  };
+  if(/^Subject:\s+Re:\s+AUTOMAIL CONFIRMATION ([0-9]+)$/) {
+    $confnum=$1;
+print LOG "Got confnum: $confnum\n";
+  };
+  if(/^Subject:\s+(Re:\s+)?AUTOMAIL FORWARD FROM (\S+)\@(\S+) ([0-9]+)$/) {
+    $re=$1; $fwduser=$2; $fwdhost=$3; $fwdnum=$4;
+print LOG "Got re: $re\n";
+print LOG "Got fwduser: $fwduser\n";
+print LOG "Got fwdhost: $fwdhost\n";
+print LOG "Got fwdnum: $fwdnum\n";
+  };
+  if(/^From:\s+(.*)$/) {
+    $fromaddress=$1;
+print LOG "Got fromaddress: $fromaddress\n";
+  };
+};
+
+#### Panic if we receive a forward notification from ourselves. ####
+#### Silently ignore if it is from elsewhere or concerns an old forward. ####
+
+if($fwdnum) {
+ if($fwduser==$LOGNAME && $fwdhost==$FQDN &&
+	-e "$HOME/.automail-forwardlog.$fwdnum") {
+  $instructions="unset forward";
+  $panic=1;
+print LOG "Panicing\n";
+  open(REPLYMAIL,"|/usr/sbin/sendmail -t");
+  if($re) {
+   # This was a reply sent by the forwarding recipient.
+print LOG "This was a reply sent by the forwarding recipient.\n";
+   print REPLYMAIL <<EOF;
+To: $LOGNAME
+Subject: AUTOMAIL FORWARD REFUSAL
+Precedence: junk
+
+Hello, this is automail.
+
+Mail forwarding has been refused by the recipient. Your forwarding will be
+cancelled without asking for confirmation.
+
+EOF
+  } else {
+   # This was not a reply, hence there is a mail loop.
+print LOG "This was not a reply, hence there is a mail loop.\n";
+   print REPLYMAIL <<EOF;
+To: $LOGNAME
+Subject: FORWARDING LOOP DETECTED!
+Precedence: junk
+
+Hello, this is automail.
+
+I HAVE DETECTED A MAIL FORWARDING LOOP!
+I will cancel your forwarding without asking for confirmation.
+Please be more careful in the future.
+
+EOF
+  };
+ };
+ # Don't continue unless there was a panic above.
+ exit(0) unless $panic;
+print LOG "Panic detected\n";
+};
+
+#### Everything below this generates a reply, so open the output now. ####
+#### If there is a panic, then the output is already open. ####
+
+open(REPLYMAIL,"|/usr/sbin/sendmail -t") && print LOG "New reply (normal position)\n" unless $panic;
+
+#### Now test for each instruction in turn. ####
+
+if($instructions=~/^unset\s+vacation\b/) {
+ #
+ # unset vacation
+ #
+ &confirminit;
+ while(<OLDRC>) {
+  s,^(INCLUDERC=/var/local/procmail-templates/vacation),\#\1,;
+  print NEWRC;
+ };
+ close(NEWRC); close(OLDRC);
+ print REPLYMAIL <<EOF;
+Vacation will be turned off.
+
+EOF
+
+} elsif($instructions=~/^set\s+vacation\s+(.*)/) {
+ #
+ # set vacation
+ #
+ $subject=$1; 
+ &confirminit;
+ while(<OLDRC>) {
+  if(/AUTOMAILALIASES=(.*)/) {
+   $aliases=$1; next;
+  };
+  last if m,INCLUDERC=/var/local/procmail-templates/vacation,;
+  print NEWRC;
+ };
+ $sender=$fromaddress;
+ $sender=~s/\@.*//;
+ $sender=~s/.*\<//;
+ $aliases="$sender $aliases" unless $aliases=~/\b$sender\b/;
+ print NEWRC "AUTOMAILALIASES=$aliases\n";
+ print NEWRC "INCLUDERC=/var/local/procmail-templates/vacation\n";
+ while(<OLDRC>) {
+  print NEWRC unless m,AUTOMAILALIASES=|INCLUDERC=/var/local/procmail-templates/vacation,;
+ };
+ close(NEWRC); close(OLDRC);
+ open (VACATION,">$HOME/.vacation.msg.automailtmp.$randomnumber");
+ print VACATION "From: $fromaddress\nSubject: $subject\n\n";
+ while(<>) {
+  print VACATION;
+ };
+ close(VACATION);
+ print REPLYMAIL <<EOF;
+VACATION MESSAGES WILL BE SENT TO ALL CORRESPONDENTS.
+
+EOF
+
+} elsif($instructions=~/^unset\s+spamfilter\b/) {
+ #
+ # unset spamfilter
+ #
+ &confirminit;
+ while(<OLDRC>) {
+  s,^(INCLUDERC=/var/local/procmail-templates/spamfilter),\#\1,;
+  print NEWRC;
+ };
+ close(NEWRC); close(OLDRC);
+print REPLYMAIL <<EOF;
+Spamfilter will be turned off
+
+EOF
+
+} elsif($instructions=~/^set\s+spamfilter\b/) {
+ #
+ # set spamfilter
+ #
+ &confirminit;
+ while(<OLDRC>) {
+  last if m,INCLUDERC=/var/local/procmail-templates/spamfilter,;
+  print NEWRC;
+ };
+ print NEWRC "INCLUDERC=/var/local/procmail-templates/spamfilter\n";
+ while(<OLDRC>) {
+  print NEWRC unless m,INCLUDERC=/var/local/procmail-templates/spamfilter,;
+ };
+ close(NEWRC); close(OLDRC);
+print REPLYMAIL <<EOF;
+MAILS WILL BE FILTERED FOR SPAM. SUSPECTED SPAM WILL BE MOVED TO A SUBFOLDER.
+
+EOF
+
+} elsif($instructions=~/^unset\s+forward\b/) {
+ #
+ # unset forwarding
+ #
+print LOG "Unsetting forwarding\n";
+ &confirminit;
+ while(<OLDRC>) {
+  s,^(INCLUDERC=/var/local/procmail-templates/forward),\#\1,;
+  print NEWRC;
+ };
+ close(NEWRC); close(OLDRC);
+print REPLYMAIL <<EOF unless $panic;
+Forwarding will be turned off
+
+EOF
+ # Force an immediate confirmation when panicing
+ $confnum=$randomnumber if $panic;
+
+} elsif($instructions=~/^set\s+forward\s+(.*)/) {
+ # 
+ # set forwarding
+ #
+ $forward=$1; 
+print LOG "Setting forwarding to $forward\n";
+ &confirminit;
+ # Make a log of the forward. We may need this info in an emergency.
+ system("rm $HOME/.automail-forwardlog.*");
+ open(FORWARDLOG,">$HOME/.automail-forwardlog.$randomnumber");
+ print FORWARDLOG "$forward\n";
+ close(FORWARDLOG);
+ while(<OLDRC>) {
+  last if m,INCLUDERC=/var/local/procmail-templates/forward,;
+  print NEWRC unless m,AUTOMAILFORWARD,;
+ };
+ print NEWRC "AUTOMAILFORWARD=$forward\n";
+ print NEWRC "INCLUDERC=/var/local/procmail-templates/forward\n";
+ while(<OLDRC>) {
+  print NEWRC unless m,AUTOMAILFORWARD=|INCLUDERC=/var/local/procmail-templates/forward,;
+ };
+ close(NEWRC); close(OLDRC);
+ print REPLYMAIL <<EOF;
+ALL EMAILS WILL BE FORWARDED TO $forward
+
+EOF
+
+} elsif($instructions=~/^disable yourself completely$/) {
+ #
+ # completely disable automail
+ #
+ &confirminit;
+ while(<OLDRC>) {
+  s,^(INCLUDERC=/var/local/procmail-templates/automail),\#\1,;
+  print NEWRC;
+ };
+ close(NEWRC); close(OLDRC);
+ # copy new procmailrc to old procmailrc
+ print REPLYMAIL <<EOF;
+AUTOMAIL WILL BE COMPLETELY DISABLED.
+
+To turn it back on again you (or your friendly sysadmin) will need to
+manually edit the procmailrc file on the mail server.
+
+EOF
+
+} elsif($instructions=~/^help\b/) { 
+ &header;
+ &help; 
+
+} elsif($instructions=~/^status\b/) {
+ #
+ # status report
+ #
+ &header;
+ print REPLYMAIL "You requested a status report:\n\n";
+ &printstatus;
+
+} elsif($instructions) {
+ &header;
+ #
+ # print syntax-error message
+ #
+ print REPLYMAIL <<EOF;
+I'm afraid I didn't understand your instructions.
+Perhaps the syntax of the Subject: line was wrong...?
+
+Your instructions appeared to read: $instructions
+
+EOF
+ &help;
+};
+
+#### If we receive a confirmation reply, complete the transaction. ####
+#### This is also called in a panic. ####
+
+if($confnum) {
+print LOG "confirming...\n";
+ if(-e "$HOME/.procmailrc.automailtmp.$confnum") {
+  rename("$HOME/.procmailrc.automailtmp.$confnum","$HOME/.procmailrc");
+  if(-e "$HOME/.vacation.msg.automailtmp.$confnum") {
+   rename("$HOME/.vacation.msg.automailtmp.$confnum","$HOME/.vacation.msg");
+   system("vacation -i");
+  };
+  print REPLYMAIL <<EOF unless $panic;
+To: $LOGNAME
+Subject: AUTOMAIL REPORT
+Precedence: junk
+
+Hello, this is automail.
+
+Your instructions have been successfully processed.
+
+EOF
+
+  # If there is a forwardlog with our conf number, then we are forwarding.
+  # Notify the recipient of the forward to detect mail loops.
+  if(-e "$HOME/.automail-forwardlog.$confnum") {
+   open(FORWARDLOG,"<$HOME/.automail-forwardlog.$confnum");
+   $forward=<FORWARDLOG>; chop $forward;
+   close(FORWARDLOG);
+   open(FORWARDNOTIFY,"|/usr/sbin/sendmail -t");
+print LOG "Notifying of forward to $forward using confnum $confnum\n";
+   print FORWARDNOTIFY <<EOF;
+To: $forward
+Subject: AUTOMAIL FORWARD FROM $LOGNAME\@$FQDN $confnum
+
+Hello, this is automail running on $FQDN. 
+
+All emails to $LOGNAME\@$FQDN
+will now be copied to $forward.
+
+If you think this is an error, please reply to this message without
+changing the Subject: line, and the forwarding will be automatically
+cancelled.
+
+Thank you.
+
+EOF
+   close(FORWARDNOTIFY);
+  };
+ } else {
+  print REPLYMAIL <<EOF;
+To: $LOGNAME
+Subject: AUTOMAIL REPORT
+Precedence: junk
+
+Hello, this is automail.
+
+I received a confirmation message with the wrong confirmation number. This
+may have been caused by someone trying to hack into your account. As a
+safety precaution I have cancelled all pending actions. 
+
+EOF
+ };
+ &printstatus;
+ system('rm $HOME/.*.automailtmp.*');
+};
+
+#### OK, that's all. ####
+
+exit(0);
+
+################################ subroutines ################################
+
+sub help() {
+ print REPLYMAIL <<EOF;
+
+Automail reads your Subject: and manages your email settings accordingly.
+
+Syntax:
+    automail! [command]
+(the exclamation mark is significant!) where command is one of:
+
+help
+  prints this message
+status
+  prints the status of the automail management system
+[un]set vacation [vacation subject line]
+  sets a 'vacation' message telling the world that you're on holiday.
+  The rest of the subject line is taken as the subject of the vacation
+  email, and the body of the mail is reproduced as the vacation message.
+[un]set forward [forwarding address]
+  sets your forwarding address to the address specified. Copies of your
+  emails will still be delivered to your local mailbox. 
+[un]set spamfilter
+  controls whether your email will be filtered for spam. When active,
+  suspected spam will be moved to a subfolder 'spam' of your inbox.
+disable yourself completely
+  disables automail so that it can only be turned back on again by
+  manually editing the procmailrc file on the mail server.
+
+Examples:
+
+        Subject: automail! status
+
+        Subject: automail! set forward foo\@bar.com
+
+        Subject: automail! set vacation I am away on holiday until 22nd
+            (message body contains email reply to be sent)
+
+        Subject: automail! unset vacation
+
+        Subject: automail! disable yourself completely
+
+EOF
+};
+
+sub printstatus() {
+ print REPLYMAIL "Your current status is as follows:\n\n";
+ open(RC,"<$HOME/.procmailrc");
+ while(<RC>) {
+  if(m,^INCLUDERC=/var/local/procmail-templates/vacation,) {
+   $vacationflag=1;
+   print REPLYMAIL <<EOF;
+VACATION IS TURNED ON
+
+To turn off vacation, send yourself an email with the subject:
+
+        automail! unset vacation
+
+EOF
+  } elsif(m,^AUTOMAILFORWARD=(.*),) {
+   $forward=$1;
+  } elsif(m,^INCLUDERC=/var/local/procmail-templates/forward,) {
+   $forwardingflag=1;
+   print REPLYMAIL <<EOF;
+MAILS ARE BEING FORWARDED TO $forward
+
+To turn off forwarding, send yourself an email with the subject:
+
+        automail! unset forward
+
+EOF
+  } elsif(m,^INCLUDERC=/var/local/procmail-templates/spamfilter,) {
+   $spamfilterflag=1;
+   print REPLYMAIL <<EOF;
+SUSPECTED SPAM WILL BE MOVED TO A SUBFOLDER 'spam' OF YOUR INBOX
+(You should check this folder regularly: spamfilter is fallible!)
+
+To turn off spamfilter, send yourself an email with the subject:
+
+        automail! unset spamfilter
+
+EOF
+  };
+ };
+ if(!$forwardingflag) { print REPLYMAIL "Forwarding is turned off\n\n"; };
+ if(!$vacationflag) { print REPLYMAIL "Vacation messages are turned off\n\n"; };
+ if(!$spamfilterflag) { print REPLYMAIL "Spam filtering is turned off\n\n"; };
+ close(RC);
+};
+
+sub confirminit {
+ $randomnumber=int(rand(100000000));
+ system("rm $HOME/.*.automailtmp.*");
+ open(OLDRC,"<$HOME/.procmailrc");
+ open(NEWRC,">$HOME/.procmailrc.automailtmp.$randomnumber");
+ print REPLYMAIL <<EOF unless $panic;
+To: $LOGNAME
+Subject: AUTOMAIL CONFIRMATION $randomnumber
+Precedence: junk
+
+Hello, this is automail. I have received your instructions and am
+checking that you really want me to continue. Your instructions were:
+
+	$instructions
+
+If you want me to complete this task, please reply to this message. The
+message can contain anything you like, but please do not edit the Subject
+line or I won't recognise it. If you do not want me to continue you need
+do nothing.
+
+Any previous unconfirmed instructions have now been forgotten.
+
+After confirmation the following will be done:
+
+EOF
+};
+
+sub header() {
+ print REPLYMAIL <<EOF;
+To: $LOGNAME
+Subject: AUTOMAIL REPORT
+Precedence: junk
+
+Hello, this is automail.
+
+EOF
+};
+

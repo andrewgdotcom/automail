@@ -1,0 +1,5 @@
+# This template sends a notification to the user via zwrite. The user must
+# have zwgc running in order to receive the message.
+:0 hic
+| perl -ne 'if (/^(Subject|From|To|CC)/){print;};'| zwrite $LOGNAME -c MAIL -i new -s "New Mail" -n
+
