@@ -37,7 +37,7 @@ Once this is done, the user sends himself an email with the subject line "automa
 
         	Subject: automail! status
 
-        	Subject: automail! set forward foo\@bar.com
+        	Subject: automail! set forward foo@bar.com
 
         	Subject: automail! set vacation I am away on holiday until 22nd
             	(message body contains email reply to be sent)
