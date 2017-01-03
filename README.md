@@ -1,5 +1,11 @@
 # Automail
-A simple tool to manage procmail by sending emails to yourself
+
+Automail is a utility to allow a user with no shell access to manipulate his procmail settings by sending specially formatted emails to himself. It consists of a perl script and several procmail template files which are include-ed by his ~/.procmailrc file. To initialise the system, the automail template must be include-ed by hand or by placing the included .procmailrc file in /etc/skel . The syntax is:
+
+	include /var/local/procmail-templates/automail
+
+Once this is done, the user sends himself an email with the subject line "automail! help" and instructions are sent to him via a return email. All communication between automail and the user takes place via email dialogue in a style similar to mailman.
+
 
 ## Usage
 
